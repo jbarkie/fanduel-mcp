@@ -1,0 +1,25 @@
+{
+  "name": "fanduel-mcp",
+  "version": "1.0.0",
+  "description": "Read-only MCP server exposing FanDuel Sportsbook NFL odds and player props as fantasy football signals",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build-cache": "tsx scripts/build-cache.ts"
+  },
+  "license": "ISC",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261021.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.151.3",
+    "zod": "^4.6.7"
+  }
+}

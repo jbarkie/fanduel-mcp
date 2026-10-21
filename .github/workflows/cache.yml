@@ -1,0 +1,36 @@
+name: Refresh cache
+
+on:
+  schedule:
+    - cron: "23 * * * *"          # hourly
+    - cron: "*/20 15-17 * * 0"    # every 20 min on Sunday late morning ET, when inactives move lines
+  workflow_dispatch:
+
+concurrency: cache-refresh
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The current slate supplies opening lines and pre-game lines for games in progress.
+      - name: Read previous slate
+        run: |
+          mkdir -p .cache
+          npx wrangler kv key get slate --namespace-id "${{ vars.KV_NAMESPACE_ID }}" --remote > .cache/prev.json || rm -f .cache/prev.json
+      - name: Build cache entries
+        run: |
+          PREV=""
+          if [ -s .cache/prev.json ]; then PREV="--prev .cache/prev.json"; fi
+          npx tsx scripts/build-cache.ts --out .cache/bulk.json $PREV
+      - name: Write to Workers KV
+        run: npx wrangler kv bulk put .cache/bulk.json --namespace-id "${{ vars.KV_NAMESPACE_ID }}" --remote

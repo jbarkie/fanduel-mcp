@@ -1,0 +1,10 @@
+name = "fanduel-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# MCP_PATH_TOKEN is a secret: `wrangler secret put MCP_PATH_TOKEN` (local dev reads .dev.vars).
+
+[[kv_namespaces]]
+binding = "CACHE"
+# Replace with the id from `npx wrangler kv namespace create CACHE`.
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
