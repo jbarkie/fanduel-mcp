@@ -7,4 +7,4 @@ compatibility_date = "2026-10-01"
 [[kv_namespaces]]
 binding = "CACHE"
 # Replace with the id from `npx wrangler kv namespace create CACHE`.
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "5dd9e04d67a14a558b1361c54fc2f1d4"
