@@ -1,7 +1,7 @@
 {
   "name": "fanduel-mcp",
   "version": "1.0.0",
-  "description": "Read-only MCP server exposing FanDuel Sportsbook NFL odds and player props as fantasy football signals",
+  "description": "Read-only MCP server exposing FanDuel Sportsbook NFL odds and player props for exploring betting markets",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

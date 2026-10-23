@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assignPositions, carryOpeningLines, parseGames, parseProps, weekFor, weekWindows } from "../src/fanduel";
-import { impliedPoints, impliedProb, noVig, poissonMean } from "../src/odds";
+import { impliedPoints, impliedProb, noVig } from "../src/odds";
 import { buildSlate, gamesFromPages, wantsProps } from "../src/slate";
 import { resolveTeam, teamFromDefense, teamFromLogo } from "../src/teams";
 import { fx, GB_DET, NE_CHI, tabsFor } from "./helpers";
@@ -11,13 +11,6 @@ describe("odds math", () => {
     expect(impliedProb(150)).toBeCloseTo(0.4, 4);
     expect(noVig(-110, -110)).toBeCloseTo(0.5, 6);
     expect(noVig(-156, 132)).toBeCloseTo(0.586, 3);
-  });
-
-  it("fits Poisson means to at-least probabilities", () => {
-    expect(poissonMean(1, 1 - Math.exp(-0.7))).toBeCloseTo(0.7, 6);
-    // P(X >= 2) for lambda 1.8 is 1 - e^-1.8 (1 + 1.8)
-    expect(poissonMean(2, 1 - Math.exp(-1.8) * 2.8)).toBeCloseTo(1.8, 4);
-    expect(poissonMean(1, 0)).toBe(0);
   });
 
   it("splits a total by the home spread", () => {

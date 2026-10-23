@@ -1,5 +1,4 @@
-// FanDuel full team names -> the abbreviations Sleeper uses, so answers line up with the
-// fantasy-football MCP server.
+// FanDuel full team names -> standard NFL abbreviations.
 export const TEAMS: Record<string, string> = {
   "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
   "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",

@@ -68,30 +68,21 @@ describe("get_games", () => {
 });
 
 describe("get_player_props", () => {
-  it("returns lines, TD odds and implied fantasy points", async () => {
-    const r: any = await tools.getPlayerProps(deps(), ["Drake Maye", "jahmyr gibbs"], "ppr");
+  it("returns lines and TD odds", async () => {
+    const r: any = await tools.getPlayerProps(deps(), ["Drake Maye", "jahmyr gibbs"]);
     const [maye, gibbs] = r.players;
     expect(maye).toMatchObject({ name: "Drake Maye", team: "NE", pos: "QB", opponent: "CHI", game: "NE @ CHI" });
     expect(maye.props.pass_yds).toEqual({ line: 246.5, over: -114, under: -114, over_prob: 0.5 });
     expect(maye.interception.prob).toBeGreaterThan(0.5);
-    expect(maye.expected.ints).toBeGreaterThan(0.7);
-    expect(maye.not_priced).toBeUndefined();
-    // Gibbs has rush (93.5) and rush+rec (137.5) lines and a receiving line; the combo is not double counted.
-    expect(gibbs.expected.rush_yds).toBe(93.5);
-    expect(gibbs.expected.rush_rec_yds).toBeUndefined();
-    expect(gibbs.implied_fpts).toBeGreaterThan(20);
-    expect(r.method).toMatch(/Poisson/);
-  });
-
-  it("scores receptions by preset", async () => {
-    const ppr: any = await tools.getPlayerProps(deps(), ["Amon-Ra St. Brown"], "ppr");
-    const std: any = await tools.getPlayerProps(deps(), ["Amon-Ra St. Brown"], "standard");
-    const p = ppr.players[0];
-    expect(p.implied_fpts - std.players[0].implied_fpts).toBeCloseTo(p.expected.receptions, 0);
+    expect(gibbs.props.rush_yds.line).toBe(93.5);
+    expect(gibbs.anytime_td.implied_prob).toBeGreaterThan(0.5);
+    expect(gibbs.implied_fpts).toBeUndefined();
+    expect(gibbs.expected).toBeUndefined();
+    expect(r.method).toMatch(/no-vig/);
   });
 
   it("handles partial, ambiguous, team-qualified and unknown names", async () => {
-    const r: any = await tools.getPlayerProps(deps(), ["St. Brown", "Brown", "Williams CHI", "Nobody Atall"], "ppr");
+    const r: any = await tools.getPlayerProps(deps(), ["St. Brown", "Brown", "Williams CHI", "Nobody Atall"]);
     expect(r.players[0].name).toBe("Amon-Ra St. Brown");
     expect(r.players[1].status).toBe("ambiguous");
     expect(r.players[1].candidates.map((c: any) => c.name)).toContain("A.J. Brown");
@@ -104,50 +95,41 @@ describe("get_player_props", () => {
     const maye = s.data.players.find((p) => p.name === "Drake Maye")!;
     const nextWeek = s.data.games.find((g) => g.week === 8 && (g.home === "NE" || g.away === "NE"))!;
     s.data.players.push({ ...structuredClone(maye), game: nextWeek.id });
-    const r: any = await tools.getPlayerProps(deps(undefined, s), ["Drake Maye"], "ppr");
+    const r: any = await tools.getPlayerProps(deps(undefined, s), ["Drake Maye"]);
     expect(r.players[0]).toMatchObject({ name: "Drake Maye", game: "NE @ CHI", week: 7, started: false });
-  });
-
-  it("falls back to the combined yards line when only it is priced", async () => {
-    const s = slate();
-    const gibbs = s.data.players.find((p) => p.name === "Jahmyr Gibbs")!;
-    delete gibbs.lines.rush_yds;
-    delete gibbs.lines.rec_yds;
-    const r: any = await tools.getPlayerProps(deps(undefined, s), ["Jahmyr Gibbs"], "ppr");
-    expect(r.players[0].expected.rush_rec_yds).toBe(137.5);
   });
 });
 
 describe("get_game_props", () => {
-  it("finds a game by teams and ranks its players", async () => {
-    const r: any = await tools.getGameProps(deps(), "Patriots @ Bears", "half");
+  it("finds a game by teams and lists its players by TD odds", async () => {
+    const r: any = await tools.getGameProps(deps(), "Patriots @ Bears");
     expect(r.game).toBe("NE @ CHI");
     expect(r.players.length).toBeGreaterThan(20);
-    const pts = r.players.map((p: any) => p.implied_fpts).filter((x: any) => x !== null);
-    expect(pts).toEqual([...pts].sort((a, b) => b - a));
-    expect((await tools.getGameProps(deps(), "lions", "ppr") as any).game).toBe("GB @ DET");
-    expect((await tools.getGameProps(deps(), "GB at DET", "ppr") as any).game).toBe("GB @ DET");
-    await expect(tools.getGameProps(deps(), "BUF", "ppr")).rejects.toThrow(/No game this week for BUF/);
+    const probs = r.players.map((p: any) => p.anytime_td?.implied_prob ?? 0);
+    expect(probs).toEqual([...probs].sort((a, b) => b - a));
+    expect((await tools.getGameProps(deps(), "lions") as any).game).toBe("GB @ DET");
+    expect((await tools.getGameProps(deps(), "GB at DET") as any).game).toBe("GB @ DET");
+    await expect(tools.getGameProps(deps(), "BUF")).rejects.toThrow(/No game this week for BUF/);
   });
 });
 
 describe("rank_players", () => {
-  it("ranks by implied points, TD odds and lines with filters", async () => {
-    const r: any = await tools.rankPlayers(deps(), "implied_fpts", "ppr", { limit: 5 });
+  it("ranks by TD odds and lines with filters", async () => {
+    const r: any = await tools.rankPlayers(deps(), "anytime_td", { limit: 5 });
     expect(r.players.map((p: any) => p.rank)).toEqual([1, 2, 3, 4, 5]);
     expect(r.players[0].value).toBeGreaterThanOrEqual(r.players[4].value);
-    const te: any = await tools.rankPlayers(deps(), "anytime_td", "ppr", { position: "TE", limit: 50 });
+    const te: any = await tools.rankPlayers(deps(), "anytime_td", { position: "TE", limit: 50 });
     expect(te.players.every((p: any) => p.pos === "TE")).toBe(true);
-    const det: any = await tools.rankPlayers(deps(), "rush_yds", "ppr", { team: "DET", limit: 1 });
+    const det: any = await tools.rankPlayers(deps(), "rush_yds", { team: "DET", limit: 1 });
     expect(det.players[0]).toMatchObject({ name: "Jahmyr Gibbs", value: 93.5 });
   });
 
   it("leaves out started games unless asked", async () => {
     const during = "2026-10-23T01:00:00Z"; // NE @ CHI in progress
-    const r: any = await tools.rankPlayers(deps(during), "implied_fpts", "ppr", { limit: 50 });
+    const r: any = await tools.rankPlayers(deps(during), "anytime_td", { limit: 50 });
     expect(r.players.some((p: any) => p.game === "NE @ CHI")).toBe(false);
     expect(r.data_gaps.join(" ")).toMatch(/already started/);
-    const all: any = await tools.rankPlayers(deps(during), "implied_fpts", "ppr", { limit: 50, include_started: true });
+    const all: any = await tools.rankPlayers(deps(during), "anytime_td", { limit: 50, include_started: true });
     expect(all.players.some((p: any) => p.game === "NE @ CHI")).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import type { DataCache } from "./cache";
 import { normalizeName } from "./names";
-import { BASE_SCORING, impliedPoints, impliedProb, noVig, poissonMean, round, SCORING, type ScoringPreset } from "./odds";
+import { impliedPoints, impliedProb, noVig, round } from "./odds";
 import { resolveTeam } from "./teams";
 import type { Cached, GameLine, Line, PlayerProps, Slate, Stat } from "./types";
 
@@ -16,10 +16,9 @@ const SOURCES = {
 };
 
 const METHOD =
-  "Probabilities are no-vig (both sides normalized) except TD odds, which are one-sided and include FanDuel's margin. " +
-  "Expected counts (TDs, INTs, receptions) come from a Poisson fit to each line and price; yardage uses the line itself, " +
-  "which is a median and runs a little below the mean. implied_fpts scores these expectations with Sleeper defaults " +
-  "(4-pt pass TD, -1 INT, 0.04/pass yd, 0.1/rush+rec yd, 6/TD) and ignores fumbles and 2-pt conversions.";
+  "Over/under, spread, moneyline and interception probabilities are no-vig (both sides normalized). " +
+  "Anytime and 2+ TD odds are one-sided, so their probabilities include FanDuel's margin and run a little high. " +
+  "A prop line is roughly the median outcome, not the average.";
 
 // The cache job runs hourly; allow for GitHub's cron delays before calling it stale.
 const STALE_MS = 3 * 3600 * 1000;
@@ -101,57 +100,12 @@ function gameView(d: Loaded, g: GameLine, playerCount: number) {
   return out;
 }
 
-// Market-implied stat expectations and fantasy points.
-function expectations(p: PlayerProps, scoring: ScoringPreset) {
-  const L = p.lines;
-  const ov = (l: Line) => noVig(l[1], l[2]);
-  const count = (l: Line | undefined) => (l ? poissonMean(Math.ceil(l[0]), ov(l)) : null);
-  let rush = L.rush_yds?.[0] ?? null, rec = L.rec_yds?.[0] ?? null;
-  const combo = L.rush_rec_yds?.[0] ?? null;
-  // Fill one side from the combined line when FanDuel only prices one of them.
-  if (combo !== null && rush !== null && rec === null) rec = Math.max(0, combo - rush);
-  if (combo !== null && rec !== null && rush === null) rush = Math.max(0, combo - rec);
-  const exp = {
-    pass_yds: L.pass_yds?.[0] ?? null,
-    pass_tds: count(L.pass_tds),
-    ints: p.interception ? poissonMean(1, noVig(p.interception[0], p.interception[1])) : null,
-    rush_yds: rush,
-    rec_yds: rec,
-    rush_rec_yds: rush === null && rec === null ? combo : null,
-    receptions: count(L.receptions),
-    tds: p.anytime_td !== null ? poissonMean(1, impliedProb(p.anytime_td)) : null,
-  };
-
-  const isQB = p.pos === "QB";
-  const missing: string[] = [];
-  if (isQB) {
-    if (exp.pass_yds === null) missing.push("pass_yds");
-    if (exp.pass_tds === null) missing.push("pass_tds");
-    if (exp.ints === null) missing.push("interception");
-  } else {
-    if (exp.rush_yds === null && exp.rec_yds === null && exp.rush_rec_yds === null) missing.push("yards");
-    if (p.pos !== "RB" && exp.receptions === null) missing.push("receptions");
-  }
-  if (exp.tds === null) missing.push("anytime_td");
-
-  const hasYards = exp.pass_yds !== null || exp.rush_yds !== null || exp.rec_yds !== null || exp.rush_rec_yds !== null;
-  const s = { ...BASE_SCORING, ...SCORING[scoring] };
-  const fpts = hasYards && p.pos !== "DEF"
-    ? (exp.pass_yds ?? 0) * s.pass_yd + (exp.pass_tds ?? 0) * s.pass_td + (exp.ints ?? 0) * s.int +
-      ((exp.rush_yds ?? 0) + (exp.rec_yds ?? 0) + (exp.rush_rec_yds ?? 0)) * s.rush_yd +
-      (exp.receptions ?? 0) * s.rec + (exp.tds ?? 0) * s.td
-    : null;
-  const expected = Object.fromEntries(Object.entries(exp).filter(([, v]) => v !== null).map(([k, v]) => [k, round(v!)]));
-  return { expected, implied_fpts: fpts === null ? null : round(fpts, 1), missing };
-}
-
-function playerView(d: Loaded, p: PlayerProps, scoring: ScoringPreset) {
+function playerView(d: Loaded, p: PlayerProps) {
   const g = d.games.get(p.game);
   const props = Object.fromEntries(
     (Object.entries(p.lines) as Array<[Stat, Line]>).map(([stat, l]) => [stat, { line: l[0], over: l[1], under: l[2], over_prob: round(noVig(l[1], l[2]), 3), ...moved(l) }]),
   );
   const opp = g && p.team ? (p.team === g.home ? g.away : p.team === g.away ? g.home : null) : null;
-  const e = expectations(p, scoring);
   return {
     name: p.name,
     team: p.team,
@@ -165,9 +119,6 @@ function playerView(d: Loaded, p: PlayerProps, scoring: ScoringPreset) {
     anytime_td: p.anytime_td === null ? null : { odds: p.anytime_td, implied_prob: round(impliedProb(p.anytime_td), 3) },
     two_plus_td: p.two_plus_td === null ? null : { odds: p.two_plus_td, implied_prob: round(impliedProb(p.two_plus_td), 3) },
     ...(p.interception ? { interception: { yes: p.interception[0], no: p.interception[1], prob: round(noVig(p.interception[0], p.interception[1]), 3) } } : {}),
-    expected: e.expected,
-    implied_fpts: e.implied_fpts,
-    ...(e.missing.length ? { not_priced: e.missing } : {}),
   };
 }
 
@@ -217,7 +168,7 @@ export async function getGames(deps: Deps, team?: string, week?: number) {
   return envelope(d, { week: week ?? d.slate.week, games: games.map((g) => gameView(d, g, counts.get(g.id) ?? 0)) }, scopeGaps(d, games));
 }
 
-export async function getPlayerProps(deps: Deps, names: string[], scoring: ScoringPreset) {
+export async function getPlayerProps(deps: Deps, names: string[]) {
   const d = await load(deps);
   // This week's games first, so a player with props in next week's game too isn't ambiguous.
   const thisWeek = new Set(weekGames(d).map((g) => g.id));
@@ -225,7 +176,7 @@ export async function getPlayerProps(deps: Deps, names: string[], scoring: Scori
   const players = names.map((name) => {
     let r = resolvePlayer(current, name);
     if (!r.hit && !r.candidates?.length) r = resolvePlayer(d.slate.players, name);
-    if (r.hit) return { query: name, ...playerView(d, r.hit, scoring) };
+    if (r.hit) return { query: name, ...playerView(d, r.hit) };
     if (r.candidates?.length) return { query: name, status: "ambiguous", candidates: r.candidates.slice(0, 8).map((p) => candidateView(d, p)) };
     return {
       query: name,
@@ -233,21 +184,21 @@ export async function getPlayerProps(deps: Deps, names: string[], scoring: Scori
       reason: "FanDuel has no props for this name this week. It skips players who are out, on bye, or in small roles; props may also not be posted yet for later games.",
     };
   });
-  return envelope(d, { scoring, players }, scopeGaps(d, weekGames(d)), true);
+  return envelope(d, { players }, scopeGaps(d, weekGames(d)), true);
 }
 
-export async function getGameProps(deps: Deps, game: string, scoring: ScoringPreset) {
+export async function getGameProps(deps: Deps, game: string) {
   const d = await load(deps);
   const g = findGame(d, game, weekGames(d));
-  const players = d.slate.players.filter((p) => p.game === g.id).map((p) => playerView(d, p, scoring));
-  players.sort((a, b) => (b.implied_fpts ?? -1) - (a.implied_fpts ?? -1) || (b.anytime_td?.implied_prob ?? 0) - (a.anytime_td?.implied_prob ?? 0));
-  return envelope(d, { scoring, ...gameView(d, g, players.length), players }, scopeGaps(d, [g]), true);
+  const players = d.slate.players.filter((p) => p.game === g.id).map((p) => playerView(d, p));
+  players.sort((a, b) => (b.anytime_td?.implied_prob ?? 0) - (a.anytime_td?.implied_prob ?? 0));
+  return envelope(d, { ...gameView(d, g, players.length), players }, scopeGaps(d, [g]), true);
 }
 
-export const RANK_STATS = ["implied_fpts", "anytime_td", "pass_yds", "pass_tds", "rush_yds", "rec_yds", "receptions", "rush_rec_yds"] as const;
+export const RANK_STATS = ["anytime_td", "pass_yds", "pass_tds", "rush_yds", "rec_yds", "receptions", "rush_rec_yds"] as const;
 export type RankStat = (typeof RANK_STATS)[number];
 
-export async function rankPlayers(deps: Deps, stat: RankStat, scoring: ScoringPreset, opts: { position?: string; team?: string; limit: number; include_started?: boolean }) {
+export async function rankPlayers(deps: Deps, stat: RankStat, opts: { position?: string; team?: string; limit: number; include_started?: boolean }) {
   const d = await load(deps);
   const games = weekGames(d).filter((g) => opts.include_started || !hasStarted(d, g));
   const ids = new Set(games.map((g) => g.id));
@@ -255,9 +206,9 @@ export async function rankPlayers(deps: Deps, stat: RankStat, scoring: ScoringPr
   if (opts.team && !team) throw new Error(`Unknown team "${opts.team}".`);
   const pool = d.slate.players.filter((p) => ids.has(p.game) && (!opts.position || p.pos === opts.position) && (!team || p.team === team));
   const value = (p: PlayerProps, v: ReturnType<typeof playerView>) =>
-    stat === "implied_fpts" ? v.implied_fpts : stat === "anytime_td" ? v.anytime_td?.implied_prob ?? null : p.lines[stat]?.[0] ?? null;
+    stat === "anytime_td" ? v.anytime_td?.implied_prob ?? null : p.lines[stat]?.[0] ?? null;
   const ranked = pool
-    .map((p) => ({ p, v: playerView(d, p, scoring) }))
+    .map((p) => ({ p, v: playerView(d, p) }))
     .map((x) => ({ ...x, value: value(x.p, x.v) }))
     .filter((x) => x.value !== null)
     .sort((a, b) => b.value! - a.value!)
@@ -265,6 +216,5 @@ export async function rankPlayers(deps: Deps, stat: RankStat, scoring: ScoringPr
     .map(({ v, value }, i) => ({ rank: i + 1, value, ...v }));
   const gaps = scopeGaps(d, games);
   if (!opts.include_started && games.length < weekGames(d).length) gaps.push("Games that already started are left out (pass include_started to keep them).");
-  if (stat === "implied_fpts") gaps.push("Players whose not_priced list includes yards or anytime_td are under-projected; FanDuel posts fewer props for low-volume players.");
-  return envelope(d, { scoring, stat, ...(opts.position ? { position: opts.position } : {}), ...(team ? { team } : {}), players: ranked }, gaps, true);
+  return envelope(d, { stat, ...(opts.position ? { position: opts.position } : {}), ...(team ? { team } : {}), players: ranked }, gaps, true);
 }

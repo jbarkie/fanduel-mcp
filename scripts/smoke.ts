@@ -15,8 +15,8 @@ const calls: Array<[string, Record<string, unknown>]> = [
   ["get_games", { team: "KC" }],
   ["get_player_props", { players: ["Patrick Mahomes", "Brown", "Nobody Atall"] }],
   ["get_game_props", { game: "DET" }],
-  ["rank_players", { stat: "implied_fpts", position: "WR", limit: 5 }],
-  ["rank_players", { stat: "anytime_td", limit: 5, scoring: "half" }],
+  ["rank_players", { stat: "rec_yds", position: "WR", limit: 5 }],
+  ["rank_players", { stat: "anytime_td", limit: 5 }],
 ];
 for (const [name, args] of calls) {
   const t0 = Date.now();

@@ -8,7 +8,7 @@ export type Stat = (typeof STATS)[number];
 export interface PlayerProps {
   name: string;
   norm: string; // normalized name for lookups
-  team: string | null; // Sleeper-style abbreviation
+  team: string | null; // NFL abbreviation
   pos: string | null; // from ESPN's player list; QB inferred from passing props when missing
   game: string; // FanDuel event id
   lines: Partial<Record<Stat, Line>>;
