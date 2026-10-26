@@ -8,16 +8,18 @@ on:
 
 concurrency: cache-refresh
 
+permissions:
+  contents: read
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -27,6 +29,9 @@ jobs:
         run: |
           mkdir -p .cache
           npx wrangler kv key get slate --namespace-id "${{ vars.KV_NAMESPACE_ID }}" --remote > .cache/prev.json || rm -f .cache/prev.json
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Build cache entries
         run: |
           PREV=""
@@ -34,3 +39,6 @@ jobs:
           npx tsx scripts/build-cache.ts --out .cache/bulk.json $PREV
       - name: Write to Workers KV
         run: npx wrangler kv bulk put .cache/bulk.json --namespace-id "${{ vars.KV_NAMESPACE_ID }}" --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
